@@ -27,11 +27,12 @@ except ImportError:
 app = Flask(__name__)
 
 class DisplayController:
-    def __init__(self, force_displays=None):
+    def __init__(self, force_displays=None, profile_dir_prefix='~/.config/'):
         self.browsers = {}
         self.chrome_processes = {}
         self.chrome_executable = self._find_chrome_executable()
         self.force_displays = force_displays  # Allow manual override
+        self.profile_dir_prefix = profile_dir_prefix
         
     def _find_chrome_executable(self):
         """Find available Chrome/Chromium executable"""
@@ -141,12 +142,6 @@ class DisplayController:
             # Get available displays
             displays = self._get_available_displays()
             
-            # Clean up temp directories
-            temp_dirs = ['/tmp/chrome_display1', '/tmp/chrome_display2']
-            for temp_dir in temp_dirs:
-                if Path(temp_dir).exists():
-                    subprocess.run(['rm', '-rf', temp_dir], check=False)
-            
             # Get monitor layout for positioning
             if hasattr(self, '_manual_positions') and self._manual_positions:
                 monitors = self._manual_positions
@@ -177,8 +172,12 @@ class DisplayController:
                     window_height = 1080
                     monitor_name = f"monitor-{i+1}"
                 
+                profile_path = os.path.expanduser(os.path.join(self.profile_dir_prefix, f'chrome_display{display_id}'))
+                os.makedirs(profile_path, exist_ok=True)
+
                 print(f"Starting Chrome instance {display_id} on {monitor_name}")
                 print(f"  Display: {display}, Position: {window_pos_x},{window_pos_y}, Size: {window_width}x{window_height}")
+                print(f"  Profile Path: {profile_path}")
                 
                 cmd = [
                     self.chrome_executable,
@@ -194,7 +193,7 @@ class DisplayController:
                     f'--window-position={window_pos_x},{window_pos_y}',
                     f'--window-size={window_width},{window_height}',
                     f'--remote-debugging-port={port}',
-                    f'--user-data-dir=/tmp/chrome_display{display_id}',
+                    f'--user-data-dir={profile_path}',
                     f'--display={display}',
                     'about:blank'
                 ]
@@ -355,14 +354,6 @@ class DisplayController:
         except Exception:
             pass
         
-        # Clean up temp directories
-        temp_dirs = ['/tmp/chrome_display1', '/tmp/chrome_display2']
-        for temp_dir in temp_dirs:
-            try:
-                subprocess.run(['rm', '-rf', temp_dir], check=False, timeout=5)
-            except Exception:
-                pass
-        
         # Clear internal state
         self.browsers.clear()
         self.chrome_processes.clear()
@@ -513,6 +504,9 @@ if __name__ == '__main__':
                        nargs=2,
                        metavar=('POS1', 'POS2'),
                        help='Manual positioning: --positions "0,0,1920,1080" "1920,0,1920,1080"')
+    parser.add_argument('--profile-dir-prefix',
+                       default=os.path.join(os.path.expanduser("~"), ".config"),
+                       help='Base directory for Chrome profiles (default: ~/.config/)')
     
     args = parser.parse_args()
     
@@ -555,7 +549,7 @@ if __name__ == '__main__':
     
     try:
         # Check dependencies and system requirements
-        controller = DisplayController(force_displays=force_displays)
+        controller = DisplayController(force_displays=force_displays, profile_dir_prefix=args.profile_dir_prefix)
         
         # Set manual positions if provided
         if manual_positions:
