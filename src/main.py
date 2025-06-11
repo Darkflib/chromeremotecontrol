@@ -24,6 +24,9 @@ except ImportError:
     print("ERROR: flask not installed. Run: pip install flask")
     sys.exit(1)
 
+import logging
+import re
+
 app = Flask(__name__)
 
 class DisplayController:
@@ -32,6 +35,7 @@ class DisplayController:
         self.chrome_processes = {}
         self.chrome_executable = self._find_chrome_executable()
         self.force_displays = force_displays  # Allow manual override
+        self.xrandr_state = None # Initialize xrandr_state
         
     def _find_chrome_executable(self):
         """Find available Chrome/Chromium executable"""
@@ -111,6 +115,142 @@ class DisplayController:
         
         print(f"Monitor layout: {monitors}")
         return monitors
+
+    def _get_xrandr_state(self):
+        """
+        Executes xrandr --query and parses its output to identify connected displays,
+        their current mode (resolution), and position.
+        Stores this information in self.xrandr_state.
+        """
+        logging.info("Attempting to capture xrandr state...")
+        try:
+            # Ensure subprocess is imported if not already at the top of the file
+            # import subprocess # Already imported at the top
+            result = subprocess.run(['xrandr', '--query'], capture_output=True, text=True, check=True, timeout=5)
+            output = result.stdout
+            self.xrandr_state = []
+            # Regex to find connected displays and their primary mode and position
+            # Example line: eDP-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 344mm x 193mm
+            # Another example: HDMI-1 connected 1920x1080+1920+0 (normal left inverted right x axis y axis) 527mm x 296mm
+            # We need to handle cases where "primary" might be present or not.
+            # The resolution and position pattern is like "1920x1080+0+0"
+            pattern = re.compile(r"(\S+) connected (?:primary )?(\d+x\d+\+\d+\+\d+)")
+
+            for line in output.splitlines():
+                match = pattern.search(line)
+                if match:
+                    display_name = match.group(1)
+                    mode_position_str = match.group(2) # This is "resolution+x+y"
+
+                    parts = mode_position_str.split('+')
+                    mode = parts[0] # "1920x1080"
+                    position = f"+{parts[1]}+{parts[2]}" # "+0+0" or "+1920+0"
+
+                    self.xrandr_state.append({
+                        "name": display_name,
+                        "mode_position": mode_position_str,
+                        "mode": mode,
+                        "position": position
+                    })
+            logging.info(f"xrandr state captured: {self.xrandr_state}")
+
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Error executing xrandr: {e.stdout} {e.stderr}")
+            self.xrandr_state = [] # Ensure it's an empty list on error
+        except subprocess.TimeoutExpired:
+            logging.error("xrandr command timed out.")
+            self.xrandr_state = []
+        except Exception as e:
+            logging.error(f"Error parsing xrandr output: {e}")
+            self.xrandr_state = [] # Ensure it's an empty list on error
+
+    def suspend_displays(self):
+        """
+        Turns off all connected displays identified by _get_xrandr_state.
+        """
+        logging.info("Attempting to suspend displays...")
+        self._get_xrandr_state()
+
+        if not self.xrandr_state:
+            logging.info("No displays found or xrandr state could not be retrieved. Nothing to suspend.")
+            return
+
+        for display_info in self.xrandr_state:
+            display_name = display_info.get("name")
+            if not display_name:
+                logging.warning(f"Display information missing name: {display_info}")
+                continue
+
+            try:
+                logging.info(f"Turning off display: {display_name}")
+                cmd = ['xrandr', '--output', display_name, '--off']
+                # import subprocess # Already imported at the top
+                subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=5)
+                logging.info(f"Successfully turned off display: {display_name}")
+            except subprocess.CalledProcessError as e:
+                logging.error(f"Error turning off display {display_name}: {e.cmd} failed with_ {e.returncode} {e.stdout} {e.stderr}")
+            except subprocess.TimeoutExpired:
+                logging.error(f"Timeout turning off display {display_name}. Command: {' '.join(cmd)}")
+            except Exception as e:
+                logging.error(f"An unexpected error occurred while turning off display {display_name}: {e}")
+
+    def resume_displays(self):
+        """
+        Restores display configurations based on the stored self.xrandr_state.
+        Assumes _get_xrandr_state() was called before suspension to populate self.xrandr_state.
+        """
+        logging.info("Attempting to resume displays...")
+
+        if not self.xrandr_state:
+            logging.info("No xrandr state found. Cannot resume displays. Was state captured before suspension?")
+            return
+
+        for display_info in self.xrandr_state:
+            display_name = display_info.get("name")
+            mode = display_info.get("mode")
+            position_str = display_info.get("position") # Expected format like "+X+Y"
+
+            if not all([display_name, mode, position_str]):
+                logging.warning(f"Display information incomplete: {display_info}. Skipping resume for this display.")
+                continue
+
+            try:
+                # Convert position from "+X+Y" to "XxY" for --pos argument
+                # Example: "+1920+0" -> "1920x0"
+                if not position_str.startswith('+') or position_str.count('+') != 2:
+                    logging.error(f"Invalid position format '{position_str}' for display {display_name}. Expected '+X+Y'. Skipping.")
+                    continue
+
+                parts = position_str[1:].split('+') # Remove leading '+' and split
+                if len(parts) != 2:
+                    logging.error(f"Could not parse position string '{position_str}' for {display_name}. Skipping.")
+                    continue
+
+                x_offset, y_offset = parts[0], parts[1]
+                pos_arg = f"{x_offset}x{y_offset}"
+
+                logging.info(f"Attempting to restore display: {display_name} with mode {mode} at position {pos_arg}")
+
+                cmd = [
+                    'xrandr',
+                    '--output', display_name,
+                    '--mode', mode,
+                    '--pos', pos_arg,
+                    '--rotate', 'normal',
+                    '--on'
+                ]
+                # import subprocess # Already imported at the top
+                subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=5)
+                logging.info(f"Successfully restored display: {display_name}")
+
+            except subprocess.CalledProcessError as e:
+                logging.error(f"Error restoring display {display_name}: {e.cmd} failed with {e.returncode} {e.stdout} {e.stderr}")
+            except subprocess.TimeoutExpired:
+                logging.error(f"Timeout restoring display {display_name}. Command: {' '.join(cmd)}")
+            except ValueError as e: # For errors in parsing position string
+                logging.error(f"Error processing position for display {display_name}: {e}")
+            except Exception as e:
+                logging.error(f"An unexpected error occurred while restoring display {display_name}: {e}")
     
     def _get_available_displays(self):
         """Check what displays are available"""
@@ -316,11 +456,19 @@ class DisplayController:
     
     def cleanup(self):
         """Clean up Chrome processes"""
+        # Attempt to resume displays first, in case they were suspended
+        try:
+            logging.info("Attempting to resume displays as part of cleanup...")
+            self.resume_displays() # resume_displays checks xrandr_state internally
+        except Exception as e:
+            logging.error(f"Error resuming displays during cleanup: {e}")
+            # Continue with cleanup even if display resumption fails
+
         if hasattr(self, '_cleaning_up') and self._cleaning_up:
             return  # Avoid recursion
         
         self._cleaning_up = True
-        print("Cleaning up Chrome processes...")
+        print("Cleaning up Chrome processes...") # Standard print, consider changing to logging.info
         
         # Close browser connections
         for display_id, tab in self.browsers.items():
@@ -465,6 +613,36 @@ def stop_displays():
         controller.cleanup()
     return jsonify({'status': 'success', 'message': 'Displays stopped'})
 
+@app.route('/suspend', methods=['POST'])
+def suspend_displays_endpoint():
+    """Suspend all displays"""
+    global controller
+    if controller is None:
+        return jsonify({'status': 'error', 'message': 'Controller not initialized. Call /start first'}), 400
+
+    try:
+        # Assuming suspend_displays logs its own errors but doesn't return a status
+        controller.suspend_displays()
+        return jsonify({'status': 'success', 'message': 'Displays suspended'})
+    except Exception as e:
+        logging.error(f"Error in /suspend endpoint: {e}")
+        return jsonify({'status': 'error', 'message': f'Failed to suspend displays: {str(e)}'}), 500
+
+@app.route('/resume', methods=['POST'])
+def resume_displays_endpoint():
+    """Resume displays from saved state"""
+    global controller
+    if controller is None:
+        return jsonify({'status': 'error', 'message': 'Controller not initialized. Call /start first'}), 400
+
+    try:
+        # Assuming resume_displays logs its own errors but doesn't return a status
+        controller.resume_displays()
+        return jsonify({'status': 'success', 'message': 'Displays resumed'})
+    except Exception as e:
+        logging.error(f"Error in /resume endpoint: {e}")
+        return jsonify({'status': 'error', 'message': f'Failed to resume displays: {str(e)}'}), 500
+
 @app.route('/', methods=['GET'])
 def index():
     """Basic status page"""
@@ -477,7 +655,9 @@ def index():
             'POST /display/<id>/refresh': 'Refresh display',
             'GET /display/<id>/current': 'Get current URL',
             'GET /status': 'Get status of all displays',
-            'POST /stop': 'Stop all displays'
+            'POST /stop': 'Stop all displays',
+            'POST /suspend': 'Suspend all displays (turn off)',
+            'POST /resume': 'Resume displays from saved state (turn on)'
         }
     })
 
@@ -495,6 +675,12 @@ def signal_handler(sig, frame):
 
 if __name__ == '__main__':
     import argparse
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+    )
     
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Chrome Remote Control Display Controller')

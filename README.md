@@ -7,6 +7,7 @@ A Flask-based application for controlling Chrome/Chromium browsers on multiple d
 - Control multiple Chrome instances on different displays
 - Remote control via REST API
 - Navigate, refresh, and monitor browser instances
+- Suspend (turn off) and resume (turn on) displays while preserving layout
 - Robust error handling and cleanup
 
 ## Requirements
@@ -63,6 +64,20 @@ python src/main.py --single-display
 - `GET /display/<id>/current` - Get current URL
 - `GET /status` - Get status of all displays
 - `POST /stop` - Stop all displays
+- `POST /suspend` - Saves current display layout and turns off all displays
+- `POST /resume` - Restores saved display layout and turns on displays
+
+### Suspend Displays
+
+*   **Endpoint:** `/suspend`
+*   **Method:** `POST`
+*   **Description:** Saves the current display layout (resolution, position of connected monitors) and then turns off all active displays using `xrandr`. This is useful for temporarily blanking the screens.
+
+### Resume Displays
+
+*   **Endpoint:** `/resume`
+*   **Method:** `POST`
+*   **Description:** Restores the display layout that was saved prior to the last call to `/suspend`. It turns on the displays and sets them to their previously recorded resolution and position using `xrandr`.
 
 ### Example Usage
 
