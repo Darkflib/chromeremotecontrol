@@ -1,11 +1,12 @@
 [project]
 dependencies = [
-    "pychrome",
-    "flask",
+    "pychrome>=0.2.3",
+    "flask>=2.3.0",
+    "rich>=13.0.0",
 ]
-name = "pychrome-flask"
+name = "chromeremotecontrol"
 version = "0.1.0"
-description = "A Flask application that uses pychrome to control a Chrome browser."
+description = "A Flask application that uses pychrome to control Chrome browsers on multiple displays."
 authors = [
     { name = "Mike", email = "darkflib@gmail.com" }
 ]
@@ -19,7 +20,30 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+    "isort>=5.12.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
 [project.urls]
-homepage = "https://github.com/darkflib/pychrome-flask"
-repository = "https://github.com/darkflib/pychrome-flask"
-tracker = "https://github.com/darkflib/pychrome-flask/issues"
+homepage = "https://github.com/darkflib/chromeremotecontrol"
+repository = "https://github.com/darkflib/chromeremotecontrol"
+tracker = "https://github.com/darkflib/chromeremotecontrol/issues"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
