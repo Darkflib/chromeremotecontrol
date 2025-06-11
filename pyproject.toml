@@ -1,0 +1,25 @@
+[project]
+dependencies = [
+    "pychrome",
+    "flask",
+]
+name = "pychrome-flask"
+version = "0.1.0"
+description = "A Flask application that uses pychrome to control a Chrome browser."
+authors = [
+    { name = "Mike", email = "darkflib@gmail.com" }
+]
+license = "MIT"
+
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+homepage = "https://github.com/darkflib/pychrome-flask"
+repository = "https://github.com/darkflib/pychrome-flask"
+tracker = "https://github.com/darkflib/pychrome-flask/issues"
