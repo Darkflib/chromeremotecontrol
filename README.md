@@ -44,6 +44,9 @@ python src/main.py --monitor-layout separate-screens --displays :0.0 :0.1
 
 # Single display mode
 python src/main.py --single-display
+
+# Specify a custom directory for Chrome profiles
+python src/main.py --profile-dir-prefix /path/to/your/profiles/
 ```
 
 **For dual monitors configured as extended desktop** (most common setup):
@@ -89,6 +92,20 @@ mike@pi4b4:~/dev/chromeremotecontrol $ curl http://localhost:5000/status
 mike@pi4b4:~/dev/chromeremotecontrol $ 
 ```
 
+## Persistent Profiles
+
+By default, Chrome profiles are now stored persistently in your user's configuration directory (e.g., `~/.config/chrome_displayN`). This means that settings, cookies, extensions, and browsing history will be retained across application restarts.
+
+You can customize the base directory for these profiles using the `--profile-dir-prefix` command-line argument. For example, to store profiles in `/mnt/chrome_profiles/`, you would run:
+
+```bash
+python src/main.py --profile-dir-prefix /mnt/chrome_profiles/
+```
+
+This is useful for:
+- Keeping different sets of profiles for different purposes.
+- Storing profiles on a specific storage device.
+- Ensuring that user data is not lost when the application is updated or restarted.
 
 ## Troubleshooting
 
